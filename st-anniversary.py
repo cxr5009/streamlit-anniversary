@@ -1,7 +1,7 @@
 # ./st-anniversary.py
 
 # Third-party imports
-import os
+import json
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -16,6 +16,49 @@ st.set_page_config(
     )
 
 DEFAULT_ANNIVERSARY_TYPES = ["1 Year", "5 Years", "10 Years", "15 Years", "25 Years", "30 Years", "40 Years", "50 Years"]
+
+def export_session():
+    """
+    Export current session state to a JSON file
+    """
+    export_data = {
+        'people': st.session_state.people,
+        'anniversary_types': st.session_state.anniversary_types,
+    }
+
+    json_string = json.dumps(export_data, indent=4)
+    return json_string
+
+@st.dialog("Import Session")
+def upload_import_file():
+    """
+    Display a file uploader dialog for importing session state
+    """
+    uploaded_file = st.file_uploader("Upload a JSON file to import session state", type=["json"])
+    if uploaded_file is not None:
+        import_session(uploaded_file)
+
+def import_session(uploaded_file):
+    """
+    Import session state from a JSON file
+    """
+    try:
+        # Read the uploaded file
+        file_contents = uploaded_file.getvalue().decode('utf-8')
+        imported_data = json.loads(file_contents)
+        
+        # Restore people
+        if 'people' in imported_data:
+            st.session_state.people = imported_data['people']
+        
+        # Restore anniversary types
+        if 'anniversary_types' in imported_data:
+            st.session_state.anniversary_types = imported_data['anniversary_types']
+        
+        st.success("Session imported successfully!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error importing session: {str(e)}")
 
 def filter_anniversaries(df, calc_date, anniversary_types):
     """
@@ -38,17 +81,24 @@ def filter_anniversaries(df, calc_date, anniversary_types):
         start_date = pd.to_datetime(row['Start Date'])
         
         for years, ann_type in anniversary_years.items():
-            # Calculate the anniversary date for this year interval
             try:
                 # First find the target year for the anniversary
                 target_year = start_date.year + years
                 
+                # Handle leap day anniversaries
+                if start_date.month == 2 and start_date.day == 29:
+                    # If target year is not a leap year, use February 28th
+                    if not (target_year % 4 == 0 and (target_year % 100 != 0 or target_year % 400 == 0)):
+                        anniversary_date = datetime(target_year, 2, 28)
+                    else:
+                        anniversary_date = datetime(target_year, 2, 29)
+                else:
                 # Create the anniversary date using the same month and day
-                anniversary_date = datetime(
-                    year=target_year,
-                    month=start_date.month,
-                    day=start_date.day
-                )
+                    anniversary_date = datetime(
+                        year=target_year,
+                        month=start_date.month,
+                        day=start_date.day
+                    )
                 
                 # Check if this anniversary falls in our target month/year
                 if (anniversary_date.month == calc_date.month and 
@@ -86,9 +136,53 @@ if "displayed_anniversaries" not in st.session_state:
 st.title(":material/celebration: Anniversary Calculator")
 st.header("Easily calculate people's anniversaries!")
 
+with st.expander("Manage Anniversary Types", expanded=False):
+    col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+    
+    with col1:
+        new_anniversary_type = st.text_input(
+            "New Anniversary Type",
+            placeholder="e.g. 20 Years, 75 Years",
+            help="Formate should be 'X Years'"
+        )
+
+    with col2:
+        add_type_button = st.button(
+            "Add Type",
+            type="primary",
+            use_container_width=True,
+        )
+    
+    if add_type_button:
+        try:
+            years = int(new_anniversary_type.split()[0])
+            type_format = f"{years} Years"
+            if type_format not in st.session_state.anniversary_types:
+                st.session_state.anniversary_types.append(type_format)
+                st.success(f"Added {type_format}")
+            else:
+                st.error(f"{type_format} already exists")
+                st.rerun()
+        except ValueError:
+            st.error("Invalid formate. Use 'X Years'")
+
+    types_to_remove = st.multiselect(
+        "Select types to remove",
+        options=st.session_state.anniversary_types,
+        default=[]
+    )
+
+    if st.button("Remove Selected Types", type="secondary"):
+        if types_to_remove:
+            for type_to_remove in types_to_remove:
+                st.session_state.anniversary_types.remove(type_to_remove)
+            st.success(f"Removed {len(types_to_remove)} anniversary type(s)")
+            st.rerun()
+
+# Anniversary Types Selection
 anniversary_types = st.multiselect(
     "Select anniversary types:",
-    options=DEFAULT_ANNIVERSARY_TYPES,
+    options=st.session_state.anniversary_types,
     default=st.session_state.anniversary_types
 )
 
@@ -115,8 +209,8 @@ with st.container(key="main"):
                 st.session_state.people[name] = {"start_date": start_date_iso}
                 st.success(f"Added {name} with a start date of {start_date_iso}")
 
-        with st.container(key="uploader", border=True):
-            uploaded_file = st.file_uploader("Choose a file", type=["csv"])
+        with st.container(key="csv_upload", border=True):
+            uploaded_file = st.file_uploader("Upload people from a CSV file", type=["csv"])
             if uploaded_file is not None:
                 try:
                     uploaded_df = pd.read_csv(uploaded_file)
@@ -127,6 +221,23 @@ with st.container(key="main"):
                     st.success(f"Uploaded {len(uploaded_df)} anniversaries")
                 except Exception as e:
                     st.exception(f"An error occurred: {e}")
+        
+        with st.expander("Save & Load"):
+            col1, col2, = st.columns([1, 1])
+            with col1:
+                session_data = export_session()
+                if st.download_button(
+                    label="Export Session",
+                    file_name=f"{datetime.now().strftime('%Y-%m-%d')}_st-anniversary_session.json",
+                    data=session_data,
+                    icon=":material/download:",
+                    use_container_width=True,):
+                    st.success("Session exported successfully!")
+                    st.rerun()
+            with col2:
+                if st.button("Import Session", icon=":material/upload:", use_container_width=True):
+                    upload_import_file()
+                    st.success("Session imported successfully!")
     
     with left_main:
         with st.container(key="anniversaries"):
@@ -184,7 +295,6 @@ with st.container(key="main"):
                             hide_index=True,
                             column_config=column_config
                         )
-                        st.balloons()
                     else:
                         st.info("No anniversaries this month.")
                 else:

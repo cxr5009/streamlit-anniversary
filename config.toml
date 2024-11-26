@@ -1,0 +1,22 @@
+[theme]
+# Abigail's Theme
+
+# The preset Streamlit theme that your custom theme inherits from.
+# One of "light" or "dark".
+# base =
+
+# Primary accent color for interactive elements.
+primaryColor ="#2E8B57"
+
+# Background color for the main content area.
+backgroundColor = "#F5F5DC"
+
+# Background color used for the sidebar and most interactive widgets.
+secondaryBackgroundColor = "#D2B48C"
+
+# Color used for almost all text.
+textColor = "#4A3930"
+
+# Font family for all text in the app, except code blocks. One of "sans serif",
+# "serif", or "monospace".
+font = "sans-serif"
